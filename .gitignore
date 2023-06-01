@@ -39,7 +39,6 @@ build
 *.ref
 *.hyp
 *.stg
-*.lst
 *.srec
 *.log
 *.trs
