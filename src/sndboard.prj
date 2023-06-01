@@ -1,0 +1,12 @@
+sndboard.prg
+.C[-P-]
+.L[-S=8192]
+=
+pcstart.o
+sndboard.c
+
+gistlib.c
+
+pcgemlib.lib
+pctoslib.lib
+pcstdlib.lib

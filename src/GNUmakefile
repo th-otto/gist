@@ -1,0 +1,42 @@
+top_srcdir=..
+
+BIN=$(top_srcdir)/bin/linux/
+
+CC = $(BIN)cc68
+CRT0=crt0.o
+CPP = $(CC) $(CPPFLAGS) -E -P
+CPPOUT = -o
+LD = $(CC)
+AS = $(CC)
+AR = ${BIN}ar68
+LINK68 = ${BIN}link68
+RELMOD = ${BIN}relmod
+ARFLAGS = -r
+RANLIB = :
+
+# Wether to run the optimizer pass for Alcyon.
+# the default is evaluated by RUN_OPTIMIZE_,
+# which must be either ${RUN_OPTIMIZE_0} or ${RUN_OPTIMIZE_1}.
+# It can be overridden by specifying foo_OPTIMIZE=0
+# for individual files.
+RUN_OPTIMIZE_0 = 
+RUN_OPTIMIZE_1 = --optimize
+RUN_OPTIMIZE_ = ${RUN_OPTIMIZE_0}
+
+all: gistdrvr.prg
+
+.c.o:
+	$(AM_V_CC)$(CC) $(CFLAGS) $(CPPFLAGS) ${RUN_OPTIMIZE_${$*_OPTIMIZE}} -c -o $@ $<
+
+gistdrvr.prg: install.o sndsubs.o sndint.o osbind.o ${MAKEFILE}
+	$(AM_V_LD)$(LD) $(LDFLAGS) -u -s -o $@ install.o sndsubs.o osbind.o sndint.o $(LIBS)
+
+gistdrvn.h: gistdrvn.prg
+	( \
+	echo "static char const driverdata[] = {"; \
+	od -t x1 -An $< | sed -e 's/ /, 0x/g' -e 's/^, /\t/' -e 's/$$/,/'; \
+	echo "};" \
+	) > $@
+
+clean::
+	rm -f *.o gistdrvr.prg
