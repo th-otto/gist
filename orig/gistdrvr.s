@@ -8,6 +8,8 @@ timer_c = 0x114
 vr = 0xfffffa17
 giselect = 0xffff8800
 
+size_sndstruct = 140
+
 		.text
 start:
 
@@ -114,7 +116,7 @@ L5:
 		cmp.w      #3,d7
 		bge.s      L10001
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a0
 		movea.l    #_snd,a1
 		tst.w      0(a0,a1.l)
@@ -132,7 +134,7 @@ L10002:
 L10004:
 		move.w     d0,d7
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a0
 		movea.l    #_snd,a1
 		move.w     114(a0,a1.l),d0
@@ -146,7 +148,7 @@ L10007:
 		move.w     d0,d7
 L7:
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a4
 		adda.l     #_snd,a4
 		move.w     114(a4),d0
@@ -163,7 +165,7 @@ L8:
 		bra        L1
 L9:
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a3
 		adda.l     #_snd,a3
 		addq.l     #2,a3
@@ -288,13 +290,13 @@ stop_snd:
 		cmpi.w     #2,8(a6)
 		bgt.s      L27
 		move.w     8(a6),d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		add.l      #_snd,d0
 		movea.l    d0,a0
 		moveq.l    #0,d0
 		move.w     d0,114(a0)
 		move.w     8(a6),d1
-		muls.w     #140,d1
+		muls.w     #size_sndstruct,d1
 		add.l      #_snd,d1
 		movea.l    d1,a1
 		move.w     d0,(a1)
@@ -316,18 +318,18 @@ snd_off:
 		cmpi.w     #2,8(a6)
 		bgt.s      L29
 		move.w     8(a6),d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a0
 		movea.l    #_snd,a1
 		tst.w      0(a0,a1.l)
 		beq.s      L29
 		move.w     8(a6),d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		add.l      #_snd,d0
 		movea.l    d0,a0
 		move.w     #1,(a0)
 		move.w     8(a6),d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		add.l      #_snd,d0
 		movea.l    d0,a0
 		move.w     #-1,112(a0)
@@ -340,7 +342,7 @@ L29:
 get_prior:
 		link       a6,#-4
 		move.w     8(a6),d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a0
 		movea.l    #_snd,a1
 		move.w     114(a0,a1.l),d0
@@ -668,9 +670,9 @@ dec_dur2:
 		bmi.s      endloop
 		neg.l      98(a0)
 endloop:
-		lea.l      -140(a0),a0
+		lea.l      -size_sndstruct(a0),a0
 		dbf        d2,vcloop
-		move.w     140(a0),d0
+		move.w     size_sndstruct(a0),d0
 		or.w       280(a0),d0
 		or.w       420(a0),d0
 		bne.s      out
@@ -690,7 +692,7 @@ s_install_int:
 		move.l     timer_c.l,(a0)+
 		lea.l      _div15,a1
 		move.l     a1,(a0)+  /* -> divtable */
-		lea.l      _snd+2*140,a1
+		lea.l      _snd+2*size_sndstruct,a1
 		move.l     a1,(a0)+  /* -> sndptr */
 		move.b     conterm.l,(a0)
 		lea.l      trap9,a0
@@ -777,10 +779,13 @@ _freqs:
           dc.w   60,  56,  53,  50,  47,  45,  42,  40,  38,  36,  34,  32
           dc.w   30/* 28,  27,  25,  24,  22,  21,  20,  19,  18,  17,  16 */
 
+/*
+ * masks for mixer control register
+ */
 _mask:
-		dc.w 0x00f6
-		dc.w 0x00ed
-		dc.w 0x00db
+		dc.w 0x00f6 /* channel A: 11110110 */
+		dc.w 0x00ed /* channel B: 11101101 */
+		dc.w 0x00db /* channel C: 11011011 */
 
 _div15:
 		dc.w 0
@@ -802,4 +807,4 @@ _div15:
 
 	.bss
 retpc: ds.l 1
-_snd: ds.b 3*140
+_snd: ds.b 3*size_sndstruct

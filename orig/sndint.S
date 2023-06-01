@@ -3,6 +3,8 @@ timer_c = 0x114
 vr = 0xfffffa17
 giselect = 0xffff8800
 
+size_sndstruct = 140
+
 		.xref _snd
 
 		.text
@@ -328,11 +330,11 @@ dec_dur2:
 		bmi.s      endloop
 		neg.l      98(a0)
 endloop:
-		lea.l      -140(a0),a0
+		lea.l      -size_sndstruct(a0),a0
 		dbf        d2,vcloop
-		move.w     140(a0),d0
-		or.w       280(a0),d0
-		or.w       420(a0),d0
+		move.w     size_sndstruct(a0),d0
+		or.w       size_sndstruct*2(a0),d0
+		or.w       size_sndstruct*3(a0),d0
 		bne.s      out
 		move.b     old_conterm,conterm
 out:
@@ -351,7 +353,7 @@ _s_install_int:
 		move.l     timer_c.l,(a0)+
 		lea.l      _div15,a1
 		move.l     a1,(a0)+  /* -> divtable */
-		lea.l      _snd+2*140,a1
+		lea.l      _snd+2*size_sndstruct,a1
 		move.l     a1,(a0)+  /* -> sndptr */
 		move.b     conterm,(a0)
 		lea.l      trap9,a0
@@ -381,10 +383,25 @@ _s_remove_int:
 /* short gi_rw(short regno, short val, short mask) */
 	.globl _gi_rw
 _gi_rw:
+#ifdef __GNUC__
+		move.l     d2,-(a7)
+#ifdef __MSHORT__
+		move.w     4(a7),d1 /* sound register */
+		move.w     6(a7),d0 /* value (-1 for reading) */
+		move.w     8(a7),d2 /* mask (only used for regno #7) */
+#else
+		move.w     6(a7),d1 /* sound register */
+		move.w     10(a7),d0 /* value (-1 for reading) */
+		move.w     14(a7),d2 /* mask (only used for regno #7) */
+#endif
+		trap       #9
+		move.l     (a7)+,d2
+#else
 		move.w     4(a7),d1 /* sound register */
 		move.w     6(a7),d0 /* value (-1 for reading) */
 		move.w     8(a7),d2 /* mask (only used for regno #7) */
 		trap       #9
+#endif
 		rts
 
 trap9:

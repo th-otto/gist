@@ -259,9 +259,6 @@ static void sndboard(void)
 	init_screen();
 	v_hide_c(vdi_handle);
 	
-	/* Turn off key click; this will interfere with sound play */
-	Supexec(stop_click);
-
 #if REVERSE_VIDEO
 	vq_color(vdi_handle, G_WHITE, 1, colors[0]);
 	vq_color(vdi_handle, G_BLACK, 1, colors[1]);
@@ -327,8 +324,6 @@ static void sndboard(void)
 	vs_color(vdi_handle, G_BLACK, colors[1]);
 #endif
 
-	Supexec(restore_click);
-	
 	wind_update(END_MCTRL);
 	wind_update(END_UPDATE);
 
@@ -355,7 +350,12 @@ int main(void)
 		exitcode = 1;
 	} else
 	{
+		/* Turn off key click; this will interfere with sound play */
+		Supexec(stop_click);
+
 		sndboard();
+
+		Supexec(restore_click);
 	}
 
 	appl_exit();

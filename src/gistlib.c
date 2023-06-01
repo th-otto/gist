@@ -16,7 +16,7 @@
 /* define to 1 to use the embedded version */
 #define EMBEDDED  0
 /* define to 1 to use the new version */
-#define NEWDRIVER 0
+#define NEWDRIVER 1
 
 #if EMBEDDED
 #if NEWDRIVER

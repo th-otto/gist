@@ -8,6 +8,8 @@ timer_c = 0x114
 vr = 0xfffffa17
 giselect = 0xffff8800
 
+size_sndstruct = 140
+
 		.text
 start:
 		bra.s install_int
@@ -125,7 +127,7 @@ L5:
 		cmp.w      #3,d7
 		bge.s      L10001
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a0
 		lea.l      _snd(pc),a1
 		tst.w      0(a0,a1.l)
@@ -143,7 +145,7 @@ L10002:
 L10004:
 		move.w     d0,d7
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		movea.l    d0,a0
 		lea.l      _snd(pc),a1
 		move.w     114(a0,a1.l),d0
@@ -157,7 +159,7 @@ L10007:
 		move.w     d0,d7
 L7:
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		lea.l      _snd(pc),a4
 		adda.l     d0,a4
 		move.w     114(a4),d0
@@ -174,7 +176,7 @@ L8:
 		bra        L1
 L9:
 		move.w     d7,d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		lea.l      _snd(pc),a3
 		adda.l     d0,a3
 		addq.l     #2,a3
@@ -299,7 +301,7 @@ stop_snd:
 		cmpi.w     #2,d0
 		bgt.s      L27
 		move.w     d0,d1
-		muls.w     #140,d1
+		muls.w     #size_sndstruct,d1
 		lea        _snd(pc),a0
 		adda.w     d1,a0
 		moveq.l    #0,d1
@@ -320,7 +322,7 @@ snd_off:
 		blt.s      L29
 		cmpi.w     #2,d0
 		bgt.s      L29
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		lea        _snd(pc),a0
 		add.l      d0,a0
 		tst.w      (a0)
@@ -334,7 +336,7 @@ L29:
 		.globl get_prior
 get_prior:
 		move.w     4(a7),d0
-		muls.w     #140,d0
+		muls.w     #size_sndstruct,d0
 		lea        _snd(pc),a0
 		add.l      d0,a0
 		move.w     114(a0),d0
@@ -660,11 +662,11 @@ dec_dur2:
 		bmi.s      endloop
 		neg.l      98(a0)
 endloop:
-		lea.l      -140(a0),a0
+		lea.l      -size_sndstruct(a0),a0
 		dbf        d2,vcloop
-		move.w     140(a0),d0
-		or.w       280(a0),d0
-		or.w       420(a0),d0
+		move.w     size_sndstruct(a0),d0
+		or.w       size_sndstruct*2(a0),d0
+		or.w       size_sndstruct*3(a0),d0
 		bne.s      out
 		move.b     old_conterm(pc),conterm.w
 out:
@@ -679,7 +681,7 @@ s_install_int:
 		move.l     timer_c.w,(a0)+
 		lea.l      _div15(pc),a1
 		move.l     a1,(a0)+  /* -> divtable */
-		lea.l      _snd+2*140(pc),a1
+		lea.l      _snd+2*size_sndstruct(pc),a1
 		move.l     a1,(a0)+  /* -> sndptr */
 		move.b     conterm.w,(a0)
 		lea.l      trap9(pc),a0
@@ -748,9 +750,9 @@ _freqs:
           dc.w   30/* 28,  27,  25,  24,  22,  21,  20,  19,  18,  17,  16 */
 
 _mask:
-		dc.w 0x00f6
-		dc.w 0x00ed
-		dc.w 0x00db
+		dc.w 0x00f6 /* channel A: 11110110 */
+		dc.w 0x00ed /* channel B: 11101101 */
+		dc.w 0x00db /* channel C: 11011011 */
 
 _div15:
 		dc.w 0
@@ -771,4 +773,4 @@ _div15:
 		dc.w 256
 
 	.bss
-_snd: ds.b 3*140
+_snd: ds.b 3*size_sndstruct

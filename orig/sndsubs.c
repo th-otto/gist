@@ -67,7 +67,14 @@ static short const freqs[] = {
       60,  56,  53,  50,  47,  45,  42,  40,  38,  36,  34,  32,
       30/* 28,  27,  25,  24,  22,  21,  20,  19,  18,  17,  16 */
 };
-short const mask[VOICES] = { 0x00f6, 0x00ed, 0x00db };
+/*
+ * masks for mixer control register
+ */
+static short const mask[VOICES] = {
+	0x00f6, /* channel A: 11110110 */
+	0x00ed, /* channel B: 11101101 */
+	0x00db  /* channel C: 11011011 */
+};
 
 
 
@@ -108,8 +115,8 @@ PP(short pitch;)
 PP(short priority;)
 {
 	register int i;
-	register int d5;
-	register int d4;
+	register int tonemask;
+	register int noisemask;
 	register int inuse;
 	register struct sound *sndptr;
 	register short *data;
@@ -131,19 +138,33 @@ PP(short priority;)
 	if (sndptr->priority > priority)
 		return -1;
 	stop_snd(voice);
-	if (!(inuse = *((short *)snddata)++))
+#ifdef __GNUC__
+	inuse = *((short *)snddata);
+	snddata = (VOIDPTR)((char *)snddata + 2); /* needs a lvalue */
+#else
+#ifdef __PUREC__
+	if ((inuse = *((short *)snddata)++) == 0) /* to avoid a warning */
+#else
+	if (!(inuse = *((short *)snddata)++)) /* to get original code */
+#endif
+#endif
 		return voice;
 	data = &snd[voice].freq;
 	for (i = 1; i < 56; i++)
 	{
+#ifdef __GNUC__
+		*data++ = *((short *)snddata);
+		snddata = (VOIDPTR)((char *)snddata + 2); /* needs a lvalue */
+#else
 		*data++ = *((short *)snddata)++;
+#endif
 	}
 	sndptr->pitch = pitch;
 	sndptr->priority = priority;
 	sndptr->o116 = sndptr->o120 = sndptr->o132 = sndptr->o136 = sndptr->o124 = sndptr->o128 = 0;
 	if (sndptr->freq >= 0)
 	{
-		d5 = 0;
+		tonemask = 0; /* turns note ON */
 		if (pitch >= 0)
 		{
 			while (pitch > 108)
@@ -157,20 +178,19 @@ PP(short priority;)
 		
 	} else
 	{
-		/* 14 */
-		d5 = 1 << voice;
+		tonemask = 1 << voice; /* turns note OFF */
 		sndptr->o36 = sndptr->o58 = 0;
 	}
 	if (sndptr->noise_freq >= 0)
 	{
-		d4 = 0;
+		noisemask = 0; /* turns noise ON */
 		gi_rw(6, sndptr->noise_freq);
 	} else
 	{
-		d4 = 8 << voice;
+		noisemask = 8 << voice; /* turns noise OFF */
 		sndptr->o80 = sndptr->o102 = 0;
 	}
-	gi_rw(7, d5 | d4, mask[voice]);
+	gi_rw(7, tonemask | noisemask, mask[voice]);
 	if (volume >= 0)
 		sndptr->volume = volume;
 	if (sndptr->o8 == 0)
