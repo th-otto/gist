@@ -72,6 +72,8 @@ static SND_OFF_PTR snd_off_ptr;
 static GET_PRIOR_PTR get_prior_ptr;
 
 
+#define MSDOS_ERR(e) (-(e) - 31)
+
 int install_int(void)
 {
 	
@@ -89,7 +91,7 @@ int install_int(void)
 #endif
 		if (fd < 0)
 		{
-			form_error(-(-33) - 31);
+			form_error(MSDOS_ERR(-33)); /* ENOENT */
 			return FALSE;
 		}
 		size = Fseek(0, fd, SEEK_END);
@@ -98,7 +100,7 @@ int install_int(void)
 		if (buf == NULL)
 		{
 			Fclose(fd);
-			form_error(-(-39) - 31);
+			form_error(MSDOS_ERR(-39)); /* ENOMEM */
 			return FALSE;
 		}
 		Fread(fd, size, buf);
@@ -106,27 +108,41 @@ int install_int(void)
 #else
 		const char *buf = driverdata;
 #endif
-		install_int_ptr = (INSTALL_INT_PTR) (buf);
-#if NEWDRIVER
-		buf += 28; /* skip GEMDOS header */
-		/*
-		 * new version has the offsets embedded
-		 */
-		remove_int_ptr = (REMOVE_INT_PTR) (buf + *((const short *)(buf + 2)));
-		init_snds_ptr = (INIT_SNDS_PTR) (buf + *((const short *)(buf + 4)));
-		snd_on_ptr = (SND_ON_PTR) (buf + *((const short *)(buf + 6)));
-		stop_snd_ptr = (STOP_SND_PTR) (buf + *((const short *)(buf + 8)));
-		snd_off_ptr = (SND_OFF_PTR) (buf + *((const short *)(buf + 10)));
-		get_prior_ptr = (GET_PRIOR_PTR) (buf + *((const short *)(buf + 12)));
-#else
-		/* fixed offsets for the original driver */
-		remove_int_ptr = (REMOVE_INT_PTR) (buf + 148);
-		init_snds_ptr = (INIT_SNDS_PTR) (buf + 176);
-		snd_on_ptr = (SND_ON_PTR) (buf + 210);
-		stop_snd_ptr = (STOP_SND_PTR) (buf + 704);
-		snd_off_ptr = (SND_OFF_PTR) (buf + 782);
-		get_prior_ptr = (GET_PRIOR_PTR) (buf + 868);
+		if (*((const unsigned short *)(buf)) != 0x601a)
+		{
+#if !EMBEDDED
+			Mfree(buf);
 #endif
+			form_error(MSDOS_ERR(-66)); /* EPLFMT */
+			return FALSE;
+		}
+		install_int_ptr = (INSTALL_INT_PTR) (buf);
+		if (*((const unsigned long *)(buf + 2)) == 1962 && /* textlen */
+			*((const unsigned long *)(buf + 6)) == 208  && /* datalen */
+			*((const unsigned long *)(buf + 10)) == 424 && /* bsslen */
+			*((const unsigned short *)(buf + 28)) == 0x41fa)
+		{
+			/* we got the original driver; use fixed offsets */
+			remove_int_ptr = (REMOVE_INT_PTR) (buf + 148);
+			init_snds_ptr = (INIT_SNDS_PTR) (buf + 176);
+			snd_on_ptr = (SND_ON_PTR) (buf + 210);
+			stop_snd_ptr = (STOP_SND_PTR) (buf + 704);
+			snd_off_ptr = (SND_OFF_PTR) (buf + 782);
+			get_prior_ptr = (GET_PRIOR_PTR) (buf + 868);
+		} else
+		{
+			buf += 28; /* skip GEMDOS header */
+			/*
+			 * new version has the offsets embedded
+			 */
+			remove_int_ptr = (REMOVE_INT_PTR) (buf + *((const short *)(buf + 2)));
+			init_snds_ptr = (INIT_SNDS_PTR) (buf + *((const short *)(buf + 4)));
+			snd_on_ptr = (SND_ON_PTR) (buf + *((const short *)(buf + 6)));
+			stop_snd_ptr = (STOP_SND_PTR) (buf + *((const short *)(buf + 8)));
+			snd_off_ptr = (SND_OFF_PTR) (buf + *((const short *)(buf + 10)));
+			get_prior_ptr = (GET_PRIOR_PTR) (buf + *((const short *)(buf + 12)));
+		}
+		
 		install_int_ptr();
 	}
 	return TRUE;
