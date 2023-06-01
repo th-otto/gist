@@ -1,4 +1,5 @@
 gistdrvr.prg
 .L[-S=0]
+.L[-M -R -F]
 =
 gistdrvr.s [-S]

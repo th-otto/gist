@@ -12,6 +12,7 @@ infile=
 CPPFLAGS=
 CFLAGS=-f
 LDFLAGS=
+PRGFLAGS=
 ASFLAGS="-u -L"
 aeshack=false
 undefined=false
@@ -63,6 +64,11 @@ do
 	-S)  generate_asm=true
 	     compile=true
              ;;
+	# option from aln: specify program flags
+	-h)
+		PRGFLAGS=$1
+		shift
+		;;
 	-W*) ;;
 	-g*) ;;
 	-I)
@@ -191,6 +197,9 @@ else
 	fi
 	if test "$bssbase" != ""; then
 		LDFLAGS="${LDFLAGS}bss[$bssbase],"
+	fi
+	if test "$PRGFLAGS" != ""; then
+		LDFLAGS="${LDFLAGS}PRGFLAGS[$PRGFLAGS],"
 	fi
 	LDFLAGS=$(echo $LDFLAGS | sed -e 's/,$//')
 	infile=$(echo $infile | tr ' ' ',')

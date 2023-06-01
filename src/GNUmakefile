@@ -29,7 +29,7 @@ all: gistdrvr.prg
 	$(AM_V_CC)$(CC) $(CFLAGS) $(CPPFLAGS) ${RUN_OPTIMIZE_${$*_OPTIMIZE}} -c -o $@ $<
 
 gistdrvr.prg: install.o sndsubs.o sndint.o osbind.o ${MAKEFILE}
-	$(AM_V_LD)$(LD) $(LDFLAGS) -u -s -o $@ install.o sndsubs.o osbind.o sndint.o $(LIBS)
+	$(AM_V_LD)$(LD) $(LDFLAGS) -u -s -o $@ install.o sndsubs.o sndint.o osbind.o $(LIBS)
 
 gistdrvn.h: gistdrvn.prg
 	( \

@@ -681,6 +681,9 @@ out:
 		move.l     old_irq,-(a7)
 		rts
 
+/*
+ * Supervisor part of installation
+ */
 s_install_int:
 		movem.l    a0-a1,-(a7)
 		lea.l      old_irq,a0
