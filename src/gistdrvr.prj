@@ -1,4 +1,6 @@
 gistdrvn.prg
 .L[-S=0]
+.S[-S]
+.S[-DCOLDFIRE=0]
 =
-gistdrvr.s [-S]
+gistdrvr.s

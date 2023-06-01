@@ -34,7 +34,7 @@ install_int:
 		lea.l      start(pc),a0
 		move.l     a0,d0      /* start addr is value for relocations */
 		movea.l    a0,a1
-		suba.w     #28,a1     /* to start of GEMDOS header */
+		lea        -28(a1),a1 /* to start of GEMDOS header */
 		adda.l     2(a1),a0   /* add size of text segment */
 		adda.l     6(a1),a0   /* add size of data segment */
 		move.l     a0,-(a7)   /* save for later use (will become start of bss) */
@@ -44,16 +44,16 @@ install_int:
 		tst.l      (a0)+
 		beq.s      donerelocs /* if zero nothing to relocate */
 		adda.l     d0,a1
-		clr.w      d1
+		clr.l      d1
 applyreloc:
 		add.l      d0,(a1)    /* apply relocation */
 relocloop:
 		move.b     (a0)+,d1   /* get next offset */
 		beq.s      donerelocs /* we are done if zero */
-		adda.w     d1,a1      /* calc next address */
+		adda.l     d1,a1      /* calc next address */
 		cmp.w      #1,d1      /* was it 1? */
 		bne.s      applyreloc
-		adda.w     #253,a1    /* skip another 253 bytes */
+		lea        253(a1),a1 /* skip another 253 bytes */
 		bra.s      relocloop
 
 relocflag: dc.w 0
@@ -65,7 +65,8 @@ donerelocs:
 clrloop:
 		clr.b      (a0)+
 clrloop1:
-		dbf        d0,clrloop
+		subq.l     #1,d0
+		bpl        clrloop
 already_relocated:
 
 c_install_int:
@@ -97,21 +98,33 @@ remove_int:
 /* void init_snds(void) */
 		.globl init_snds
 init_snds:
-		subq.w     #2,a7
+		subq.l     #2,a7
 		clr.w      (a7)
 init_snds_2:
 		bsr        stop_snd
+		.IFNE COLDFIRE
+		move.w     (a7),d0
+		addq.l     #1,d0
+		move.w     d0,(a7)
+		cmpi.w     #3,d0
+		.ELSE
 		addq.w     #1,(a7)
 		cmpi.w     #3,(a7)
+		.ENDC
 		blt.s      init_snds_2
-		addq.w     #2,a7
+		addq.l     #2,a7
 		rts
 
 /* short cdecl snd_on(void *sndptr, short voice, short volume, short pitch, short priority) */
 		.globl snd_on
 snd_on:
 		link       a6,#0
+		.IFNE COLDFIRE
+		lea        -9*4(a7),a7
+		movem.l    d2-d7/a3-a5,(a7)
+		.ELSE
 		movem.l    d2-d7/a3-a5,-(a7)
+		.ENDC
 		movea.l    8(a6),a5
 		move.w     12(a6),d7
 		tst.w      d7
@@ -122,7 +135,7 @@ L10000:
 		clr.w      d7
 		bra.s      L5
 L6:
-		addq.w     #1,d7
+		addq.l     #1,d7
 L5:
 		cmp.w      #3,d7
 		bge.s      L10001
@@ -184,7 +197,7 @@ L9:
 		bra.s      L12
 L13:
 		move.w     (a5)+,(a3)+
-		addq.w     #1,d6
+		addq.l     #1,d6
 L12:
 		cmp.w      #56,d6
 		blt.s      L13
@@ -288,8 +301,12 @@ L26:
 		move.w     d3,(a4)
 		move.w     d7,d0
 L1:
-		tst.l      (a7)+
-		movem.l    (a7)+,d3-d7/a3-a5
+		.IFNE COLDFIRE
+		movem.l    (a7),d2-d7/a3-a5
+		lea        9*4(a7),a7
+		.ELSE
+		movem.l    (a7)+,d2-d7/a3-a5
+		.ENDC
 		unlk       a6
 		rts
 
@@ -343,9 +360,14 @@ get_prior:
 		rts
 
 timer_irq:
+		.IFNE COLDFIRE
+		lea        -7*4(a7),a7
+		movem.l    d0-d3/a0-a2,(a7)
+		.ELSE
 		movem.l    d0-d3/a0-a2,-(a7)
-		movea.l    divtable(pc),a2
-		movea.l    sndptr(pc),a0
+		.ENDC
+		lea.l      _div15(pc),a2
+		lea.l      _snd+2*size_sndstruct(pc),a0
 		movea.w    #giselect,a1
 		moveq.l    #2,d2
 		move.w     sr,-(a7)
@@ -660,82 +682,119 @@ dec_dur2:
 		move.w     132(a0),d3
 		eor.w      d1,d3
 		bmi.s      endloop
+		.IFNE COLDFIRE
+		move.l     98(a0),d0
+		neg.l      d0
+		move.l     d0,98(a0)
+		.ELSE
 		neg.l      98(a0)
+		.ENDC
 endloop:
 		lea.l      -size_sndstruct(a0),a0
+		.IFNE COLDFIRE
+		subq.l     #1,d2
+		bpl        vcloop
+		.ELSE
 		dbf        d2,vcloop
+		.ENDC
+
+		.IFNE COLDFIRE
+		clr.l      d0
+		clr.l      d1
+		move.w     size_sndstruct(a0),d0
+		move.w     size_sndstruct*2(a0),d1
+		or.l       d1,d0
+		move.w     size_sndstruct*3(a0),d1
+		or.l       d1,d0
+		bne.s      out
+		/* no voices in use anymore, restore conterm */
+		move.b     old_conterm(pc),d0
+		move.b     d0,conterm.w
+		.ELSE
 		move.w     size_sndstruct(a0),d0
 		or.w       size_sndstruct*2(a0),d0
 		or.w       size_sndstruct*3(a0),d0
 		bne.s      out
+		/* no voices in use anymore, restore conterm */
 		move.b     old_conterm(pc),conterm.w
+		.ENDC
 out:
+		.IFNE COLDFIRE
+		move.l     (a7)+,d0
+		move.w     d0,sr
+		movem.l    (a7),d0-d3/a0-a2
+		lea        7*4(a7),a7
+		.ELSE
 		move.w     (a7)+,sr
 		movem.l    (a7)+,d0-d3/a0-a2
+		.ENDC
 		move.l     old_irq(pc),-(a7)
 		rts
 
 s_install_int:
-		movem.l    a0-a1,-(a7)
+        move.l     a1,-(a7)
+        move.l     a0,-(a7)
 		lea.l      old_irq(pc),a0
 		move.l     timer_c.w,(a0)+
-		lea.l      _div15(pc),a1
-		move.l     a1,(a0)+  /* -> divtable */
-		lea.l      _snd+2*size_sndstruct(pc),a1
-		move.l     a1,(a0)+  /* -> sndptr */
 		move.b     conterm.w,(a0)
-		lea.l      trap9(pc),a0
-		move.l     a0,0x000000A4.w
 		lea.l      timer_irq(pc),a0
 		move.l     a0,timer_c.w
+		.IFNE COLDFIRE
+		move.b     #0x40,d0
+		move.b     d0,vr.w /* automatic end-of-interrupt */
+		.ELSE
 		move.b     #0x40,vr.w /* automatic end-of-interrupt */
-		movem.l    (a7)+,a0-a1
+		.ENDC
+		move.l     (a7)+,a0
+		move.l     (a7)+,a1
 		rts
 
 old_irq:
-		dc.l 0x4e714e71
-divtable:
-		dc.l 0x4e714e71
-sndptr:
 		dc.l 0x4e714e71
 old_conterm:
 		dc.w 0x4e71
 
 s_remove_int:
+		.IFNE COLDFIRE
+		move.l     old_irq(pc),d0
+		move.l     d0,timer_c.w
+		move.b     old_conterm(pc),d0
+		move.b     d0,conterm.w
+		move.b     #0x48,d0
+		move.b     d0,vr.w /* software end-of-interrupt */
+		.ELSE
 		move.l     old_irq(pc),timer_c.w
 		move.b     old_conterm(pc),conterm.w
 		move.b     #0x48,vr.w /* software end-of-interrupt */
+		.ENDC
 		rts
 
 /* short gi_rw(short regno, short val, short mask) */
 gi_rw:
-		move.w     4(a7),d1 /* sound register */
-		move.w     6(a7),d0 /* value (-1 for reading) */
-		move.w     8(a7),d2 /* mask (only used for regno #7) */
-		trap       #9
+        move.l     d4,-(a7)
+        move.l     d3,-(a7)
+		move.w     12(a7),d3 /* sound register */
+		move.w     14(a7),d4 /* value (-1 for reading) */
+		cmp.b      #7,d3
+		bne.s      gi_rw2
+		move.w     d3,-(a7)
+		clr.w      -(a7)
+		move.w     #28,-(a7) /* Giaccess (read) */
+		trap       #14
+		addq.l     #6,a7
+		move.w     16(a7),d1 /* mask */
+		and.l      d1,d0
+		or.l       d0,d4
+gi_rw2:
+        or.w       #128,d3   /* set write mask for Giaccess */
+		move.w     d3,-(a7)
+		move.w     d4,-(a7)
+		move.w     #28,-(a7) /* Giaccess (write) */
+		trap       #14
+		addq.l     #6,a7
+        move.l     (a7)+,d3
+        move.l     (a7)+,d4
 		rts
-
-trap9:
-		move.w     sr,-(a7)
-		ori.w      #0x0700,sr
-		movea.w    #giselect,a0
-		and.b      #15,d1
-		move.b     d1,(a0)
-		tst.w      d0
-		bmi.s      trap9_1
-		cmp.b      #7,d1
-		bne.s      trap9_2
-		move.b     (a0),d1
-		and.b      d2,d1
-		or.b       d1,d0
-trap9_2:
-		move.b     d0,2(a0)
-trap9_1:
-		moveq.l    #0,d0
-		move.b     (a0),d0
-		move.b     #11,(a0) /* select envelop period low */
-		move.w     (a7)+,sr
-		rte
 
 	.data
 _freqs:
