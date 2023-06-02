@@ -5,7 +5,10 @@ sndboard.prg
 pcstart.o
 sndboard.c
 
-gistlib.c
+; for loading the driver from external overlay:
+;gistlib.c
+; for using compiled-in routines:
+gistlib.prj
 
 pcgemlib.lib
 pctoslib.lib

@@ -1,0 +1,9 @@
+gistlib.lib
+.C[-P-]
+.C[-G]
+.S[-S]
+.S[-DCOLDFIRE=0]
+.L[-J]
+=
+sndsubs.c
+sndint.S

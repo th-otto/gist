@@ -2,29 +2,20 @@
 
 #ifdef __PUREC__
 #include <tos.h>
+#include <stdarg.h>
 #endif
 
 #ifdef __GNUC__
 #include <osbind.h>
+#include <stdarg.h>
 #endif
 
 #ifdef __ALCYON__
 #define Supexec(x) xbios(38, x)
+#define Giaccess(value, reg) xbios(28, value, reg)
 #endif
-
-#ifdef __GNUC__
-#ifndef __MSHORT__
- #error "you loose"
-#endif
-#endif
-short cdecl gi_rw PROTO((short regno, short val, ...));
-
 
 #define VOICES 3
-
-/* defined in interrupt code; supervisor part of install */
-long s_install_int PROTO((NOTHING));
-long s_remove_int PROTO((NOTHING));
 
 struct sound {
 	/*   0 */ short inuse;
@@ -54,8 +45,15 @@ struct sound {
 	/* 136 */ long o136;
 	/* 140 */ 
 };
+extern VOIDPTR old_irq;
+extern char old_conterm;
 
-struct sound snd[VOICES];
+#define timer_c *((VOIDPTR *)0x114)
+#define conterm *((char *)0x484)
+#define vr *((char *)0xfffffa17L)
+
+extern VOID timer_irq PROTO((NOTHING));
+extern struct sound snd[VOICES];
 
 static short const freqs[] = {
 /*     C   C#    D   D#    E    F   F#    G   G#    A   A#    B */
@@ -78,17 +76,37 @@ static short const mask[VOICES] = {
 };
 
 
+static long s_install_int(NOTHING)
+{
+	if (old_irq == 0)
+	{
+		old_irq = timer_c;
+		old_conterm = conterm;
+		timer_c = timer_irq;
+		vr = 0x40;  /* automatic end-of-interrupt */
+	}
+	return 0;
+}
 
-/*
- * jumped from the install code in install.S
- */
-VOID c_install_int PROTO((NOTHING));
 
-
-VOID c_install_int(NOTHING)
+int install_int(NOTHING)
 {
 	Supexec(s_install_int);
 	init_snds();
+	return TRUE;
+}
+
+
+static long s_remove_int(NOTHING)
+{
+	if (old_irq != 0)
+	{
+		timer_c = old_irq;
+		conterm = old_conterm;
+		vr = 0x48;  /* software end-of-interrupt */
+		old_irq = 0;
+	}
+	return 0;
 }
 
 
@@ -105,6 +123,34 @@ VOID init_snds(NOTHING)
 	
 	for (i = 0; i < VOICES; i++)
 		stop_snd(i);
+}
+
+
+static VOID gi_rw(P(short) regno, P(short) value
+#ifdef __ALCYON__
+	, mask
+#else
+	, ...
+#endif
+)
+PP(short regno;)
+PP(short value;)
+PP(short mask;)
+{
+	if (regno == 7)
+	{
+#ifndef __ALCYON__
+		va_list args;
+		short mask;
+		
+		va_start(args, value);
+		mask = va_arg(args, int);
+		va_end(args);
+#endif
+		value |= Giaccess(0, regno) & mask;
+	}
+	regno |= 0x80; /* set write mask for Giaccess */
+	(VOID) Giaccess(value, regno);
 }
 
 
@@ -139,27 +185,15 @@ PP(short priority;)
 	if (sndptr->priority > priority)
 		return -1;
 	stop_snd(voice);
-#ifdef __GNUC__
 	inuse = *((short *)snddata);
 	snddata = (VOIDPTR)((char *)snddata + 2); /* needs a lvalue */
 	if (inuse == 0)
-#else
-#ifdef __PUREC__
-	if ((inuse = *((short *)snddata)++) == 0) /* to avoid a warning */
-#else
-	if (!(inuse = *((short *)snddata)++)) /* to get original code */
-#endif
-#endif
 		return voice;
-	data = &snd[voice].freq;
+	data = &sndptr->freq;
 	for (i = 1; i < 56; i++)
 	{
-#ifdef __GNUC__
 		*data++ = *((short *)snddata);
 		snddata = (VOIDPTR)((char *)snddata + 2); /* needs a lvalue */
-#else
-		*data++ = *((short *)snddata)++;
-#endif
 	}
 	sndptr->pitch = pitch;
 	sndptr->priority = priority;
