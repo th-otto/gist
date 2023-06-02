@@ -10,6 +10,12 @@ giselect = 0xffff8800
 
 size_sndstruct = 140
 
+#ifdef __mcoldfire__
+	COLDFIRE = 1
+#else
+	COLDFIRE = 0
+#endif
+
 		.text
 start:
 		bra.s install_int
@@ -103,6 +109,7 @@ init_snds:
 init_snds_2:
 		bsr        stop_snd
 		.IFNE COLDFIRE
+		moveq      #0,d0
 		move.w     (a7),d0
 		addq.l     #1,d0
 		move.w     d0,(a7)
@@ -120,19 +127,18 @@ init_snds_2:
 snd_on:
 		link       a6,#0
 		.IFNE COLDFIRE
-		lea        -9*4(a7),a7
-		movem.l    d2-d7/a3-a5,(a7)
+		lea        -10*4(a7),a7
+		movem.l    d2-d7/a2-a5,(a7)
 		.ELSE
-		movem.l    d2-d7/a3-a5,-(a7)
+		movem.l    d2-d7/a2-a5,-(a7)
 		.ENDC
-		movea.l    8(a6),a5
-		move.w     12(a6),d7
-		tst.w      d7
-		blt.s      L10000
+		movea.l    8(a6),a5     /* sndptr */
+		move.w     12(a6),d7    /* voice */
+		blt.s      L10000       /* if (voice < 0 || voice > VOICES-1) */
 		cmp.w      #2,d7
 		ble.s      L7
 L10000:
-		clr.w      d7
+		clr.w      d7           /* for (voice = 0; voice < VOICES && snd[voice].inuse; voice++) */
 		bra.s      L5
 L6:
 		addq.l     #1,d7
@@ -141,14 +147,13 @@ L5:
 		bge.s      L10001
 		move.w     d7,d0
 		muls.w     #size_sndstruct,d0
-		movea.l    d0,a0
 		lea.l      _snd(pc),a1
-		tst.w      0(a0,a1.l)
+		tst.w      0(a1,d0.l)
 		bne.s      L6
 L10001:
-		cmp.w      #3,d7
+		cmp.w      #3,d7        /*   if (voice == VOICES) */
 		bne.s      L7
-		move.w     _snd+114(pc),d0
+		move.w     _snd+114(pc),d0 /*   voice = snd[0].priority < snd[1].priority ? 0 : 1; */
 		cmp.w      _snd+254(pc),d0
 		bge.s      L10002
 		clr.w      d0
@@ -157,11 +162,10 @@ L10002:
 		moveq.l    #1,d0
 L10004:
 		move.w     d0,d7
-		move.w     d7,d0
+		move.w     d7,d0        /*      voice = snd[2].priority > snd[voice].priority ? voice : 2; */
 		muls.w     #size_sndstruct,d0
-		movea.l    d0,a0
 		lea.l      _snd(pc),a1
-		move.w     114(a0,a1.l),d0
+		move.w     114(a1,d0.l),d0
 		cmp.w      _snd+394(pc),d0
 		bge.s      L10005
 		move.w     d7,d0
@@ -171,38 +175,36 @@ L10005:
 L10007:
 		move.w     d0,d7
 L7:
-		move.w     d7,d0
+		move.w     d7,d0        /* sndptr = &snd[voice]; */
 		muls.w     #size_sndstruct,d0
 		lea.l      _snd(pc),a4
 		adda.l     d0,a4
-		move.w     114(a4),d0
+		move.w     114(a4),d0   /* if (sndptr->priority > priority) */
 		cmp.w      18(a6),d0
 		ble.s      L8
-		moveq.l    #-1,d0
+		moveq.l    #-1,d0       /*    return -1 */
 		bra        L1
 L8:
-		move.w     d7,(a7)
+		move.w     d7,-(a7)     /* stop_snd(voice); */
 		bsr        stop_snd
-		move.w     (a5)+,d3
+		addq.l     #2,a7
+		move.w     (a5)+,d3     /* if ((inuse = *((short *)snddata)++) == 0) */
 		bne.s      L9
-		move.w     d7,d0
+		move.w     d7,d0        /*    return voice; */
 		bra        L1
 L9:
-		move.w     d7,d0
-		muls.w     #size_sndstruct,d0
-		lea.l      _snd(pc),a3
-		adda.l     d0,a3
+		move.l     a4,a3        /* data = &sndptr->freq; */
 		addq.l     #2,a3
-		moveq.l    #1,d6
+		moveq.l    #1,d6        /* for (i = 1; i < 56; i++) */
 		bra.s      L12
 L13:
-		move.w     (a5)+,(a3)+
+		move.w     (a5)+,(a3)+  /*   *data++ = *((short *)snddata)++; */
 		addq.l     #1,d6
 L12:
 		cmp.w      #56,d6
 		blt.s      L13
-		move.w     16(a6),112(a4)
-		move.w     18(a6),114(a4)
+		move.w     16(a6),112(a4) /* sndptr->pitch = pitch; */
+		move.w     18(a6),114(a4) /* sndptr->priority = priority; */
 		clr.l      d0
 		move.l     d0,128(a4)
 		move.l     d0,124(a4)
@@ -210,102 +212,136 @@ L12:
 		move.l     d0,132(a4)
 		move.l     d0,120(a4)
 		move.l     d0,116(a4)
-		tst.w      2(a4)
+		tst.w      2(a4)        /* if (sndptr->freq >= 0) */
 		blt.s      L14
-		clr.w      d5
-		tst.w      16(a6)
+		clr.w      d5           /*    tonemask = 0; */
+		move.w     16(a6),d0    /*    if (pitch >= 0) */
 		blt.s      L15
-		bra.s      L18
+		bra.s      L18          /*      while (pitch > 108) */
 L17:
-		subi.w     #12,16(a6)
+		.IFNE COLDFIRE
+		subi.l     #12,d0       /*        pitch -= 12; */
+		.ELSE
+		subi.w     #12,d0       /*        pitch -= 12; */
+		.ENDC
 L18:
-		cmpi.w     #108,16(a6)
+		cmpi.w     #108,d0
 		bgt.s      L17
-		bra.s      L21
+		bra.s      L21          /*      while (pitch < 24) */
 L20:
-		addi.w     #12,16(a6)
+		.IFNE COLDFIRE
+		addi.l     #12,d0       /*        pitch += 12; */
+		.ELSE
+		addi.w     #12,d0       /*        pitch += 12; */
+		.ENDC
 L21:
-		cmpi.w     #24,16(a6)
+		cmpi.w     #24,d0
 		blt.s      L20
-		move.w     16(a6),d0
-		add.w      #-24,d0
-		add.w      d0,d0
 		lea.l      _freqs(pc),a0
+		.IFNE COLDFIRE
+		mvz.w      d0,d0
+		add.l      #-24,d0      /*      sndptr->freq = freqs[pitch - 24]; */
+		add.l      d0,d0
+		adda.l     d0,a0
+		.ELSE
+		add.w      #-24,d0      /*      sndptr->freq = freqs[pitch - 24]; */
+		add.w      d0,d0
 		adda.w     d0,a0
+		.ENDC
 		move.w     (a0),2(a4)
 L15:
-		move.w     2(a4),(a7)
-		andi.w     #255,(a7)
+		moveq      #0,d1
+		move.b     3(a4),d1     /*   gi_rw(voice << 1, sndptr->freq & 0xff); */
 		move.w     d7,d0
-		asl.w      #1,d0
-		move.w     d0,-(a7)
+		.IFNE COLDFIRE
+		add.l      d0,d0
+		.ELSE
+		add.w      d0,d0
+		.ENDC
 		bsr        gi_rw
-		addq.l     #2,a7
-		move.w     2(a4),d0
-		asr.w      #8,d0
-		move.w     d0,(a7)
+		moveq      #0,d1
+		move.b     2(a4),d1     /*   gi_rw((voice << 1) + 1, sndptr->freq >> 8); */
 		move.w     d7,d0
-		asl.w      #1,d0
-		move.w     d0,-(a7)
-		addq.w     #1,(a7)
+		.IFNE COLDFIRE
+		mvz.w      d0,d0
+		add.l      d0,d0
+		addq.l     #1,d0
+		.ELSE
+		add.w      d0,d0
+		addq.w     #1,d0
+		.ENDC
 		bsr        gi_rw
-		addq.l     #2,a7
-		bra.s      L22
+		bra.s      L22          /* } else { */
 L14:
-		moveq.l    #1,d5
-		move.w     d7,d0
-		asl.w      d0,d5
+		moveq.l    #1,d5        /*   tonemask = 1 << voice; */
+		.IFNE COLDFIRE
+		asl.l      d7,d5
+		.ELSE
+		asl.w      d7,d5
+		.ENDC
 		clr.l      d0
 		move.l     d0,58(a4)
 		move.w     d0,36(a4)
 L22:
-		tst.w      4(a4)
+		move.w     4(a4),d1     /* if (sndptr->noise_freq >= 0) */
 		blt.s      L23
-		clr.w      d4
-		move.w     4(a4),(a7)
-		move.w     #6,-(a7)
+		clr.w      d4           /*   noisemask = 0; */
+		moveq      #6,d0        /*   gi_rw(6, sndptr->noise_freq); */
 		bsr        gi_rw
-		addq.l     #2,a7
-		bra.s      L24
+		bra.s      L24          /* } else { */
 L23:
-		moveq.l    #8,d4
-		move.w     d7,d0
-		asl.w      d0,d4
+		moveq.l    #8,d4        /*   noisemask = 8 << voice; */
+		.IFNE COLDFIRE
+		asl.l      d7,d4
+		.ELSE
+		asl.w      d7,d4
+		.ENDC
 		clr.l      d0
 		move.l     d0,102(a4)
 		move.w     d0,80(a4)
 L24:
-		movea.w    d7,a0
+		movea.w    d7,a0        /* gi_rw(7, tonemask | noisemask, mask[voice]); */
 		adda.l     a0,a0
 		lea.l      _mask(pc),a1
-		move.w     0(a0,a1.l),(a7)
-		move.w     d5,-(a7)
-		move.w     d4,d0
-		or.w       d0,(a7)
-		move.w     #7,-(a7)
-		bsr        gi_rw
-		addq.l     #4,a7
-		tst.w      14(a6)
-		blt.s      L25
-		move.w     14(a6),6(a4)
-L25:
-		tst.w      8(a4)
-		bne.s      L26
-		move.l     #0x000F0000,116(a4)
-		move.w     6(a4),(a7)
-		move.w     d7,-(a7)
-		addq.w     #8,(a7)
+		move.w     0(a0,a1.l),-(a7)
+		move.w     d5,d1
+		.IFNE COLDFIRE
+		or.l       d4,d1
+		.ELSE
+		or.w       d4,d1
+		.ENDC
+		moveq      #7,d0
 		bsr        gi_rw
 		addq.l     #2,a7
-L26:
-		move.w     d3,(a4)
+		move.w     14(a6),d0    /* if (volume >= 0) */
+		blt.s      L25
+		move.w     d0,6(a4)     /*   sndptr->volume = volume; */
+L25:
+		tst.w      8(a4)        /* if (sndptr->o8 == 0) */
+		bne.s      L26
+		.IFNE COLDFIRE
+		move.l     #0x000F0000,d0
+		move.l     d0,116(a4)
+		.ELSE
+		move.l     #0x000F0000,116(a4)
+		.ENDC
+		move.w     6(a4),d1     /*   gi_rw(voice + 8, sndptr->volume); */
 		move.w     d7,d0
+		.IFNE COLDFIRE
+		addq.l     #8,d0
+		.ELSE
+		addq.w     #8,d0
+		.ENDC
+		bsr        gi_rw
+L26:
+		move.w     d3,(a4)      /* sndptr->inuse = inuse; */
+		move.w     d7,d0        /* return voice; */
 L1:
 		.IFNE COLDFIRE
-		movem.l    (a7),d2-d7/a3-a5
-		lea        9*4(a7),a7
+		movem.l    (a7),d2-d7/a2-a5
+		lea        10*4(a7),a7
 		.ELSE
-		movem.l    (a7)+,d2-d7/a3-a5
+		movem.l    (a7)+,d2-d7/a2-a5
 		.ENDC
 		unlk       a6
 		rts
@@ -320,15 +356,20 @@ stop_snd:
 		move.w     d0,d1
 		muls.w     #size_sndstruct,d1
 		lea        _snd(pc),a0
+		.IFNE COLDFIRE
+		adda.l     d1,a0
+		.ELSE
 		adda.w     d1,a0
+		.ENDC
 		moveq.l    #0,d1
 		move.w     d1,114(a0) /* priority */
 		move.w     d1,(a0)
-		clr.w      -(a7)
-		move.w     d0,-(a7)
-		addq.w     #8,(a7)
+		.IFNE COLDFIRE
+		addq.l     #8,d0
+		.ELSE
+		addq.w     #8,d0
+		.ENDC
 		bsr        gi_rw
-		addq.l     #4,a7
 L27:
 		rts
 
@@ -370,10 +411,18 @@ timer_irq:
 		lea.l      _snd+2*size_sndstruct(pc),a0
 		movea.w    #giselect,a1
 		moveq.l    #2,d2
-		move.w     sr,-(a7)
-		ori.w      #0x0500,sr
-		andi.w     #0xFDFF,sr
-		move.b     #0,conterm.w
+		move.w     sr,d0
+		.IFNE COLDFIRE
+		move.l     d0,-(a7)
+		ori.l      #0x0500,d0
+		andi.l     #0xFDFF,d0
+		.ELSE
+		move.w     d0,-(a7)
+		ori.w      #0x0500,d0
+		andi.w     #0xFDFF,d0
+		.ENDC
+		move.w     d0,sr
+		clr.b      conterm.w
 vcloop:
 		tst.w      (a0)
 		beq        endloop
@@ -384,8 +433,14 @@ vcloop:
 		add.l      10(a0),d1
 		cmp.l      #0x000F0000,d1
 		blt.s      endve
-		move.l     #0x000F0000,d1
+		.IFNE COLDFIRE
+		move.w     8(a0),d1
+		addq.l     #1,d1
+		move.w     d1,8(a0)
+		.ELSE
 		addq.w     #1,8(a0)
+		.ENDC
+		move.l     #0x000F0000,d1
 		bra.s      endve
 ved:
 		cmp.b      #2,d0
@@ -393,8 +448,14 @@ ved:
 		add.l      14(a0),d1
 		cmp.l      18(a0),d1
 		bgt.s      endve
-		move.l     18(a0),d1
+		.IFNE COLDFIRE
+		move.w     8(a0),d1
+		addq.l     #1,d1
+		move.w     d1,8(a0)
+		.ELSE
 		addq.w     #1,8(a0)
+		.ENDC
+		move.l     18(a0),d1
 		bra.s      endve
 ver:
 		cmp.b      #4,d0
@@ -412,7 +473,13 @@ lva:
 		beq.s      do_vol
 		tst.w      34(a0)
 		beq.s      do_lv
+		.IFNE COLDFIRE
+		move.w     34(a0),d1
+		subq.l     #1,d1
+		move.w     d1,34(a0)
+		.ELSE
 		subq.w     #1,34(a0)
+		.ENDC
 		bra.s      do_vol
 do_lv:
 		move.l     120(a0),d1
@@ -423,17 +490,36 @@ do_lv:
 		cmp.l      d0,d1
 		bgt.s      enddo_lv
 do_lv1:
-		move.l     d0,d1
+		.IFNE COLDFIRE
+		move.l     30(a0),d1
+		neg.l      d1
+		move.l     d1,30(a0)
+		.ELSE
 		neg.l      30(a0)
+		.ENDC
+		move.l     d0,d1
 enddo_lv:
 		move.l     d1,120(a0)
 do_vol:
 		move.w     8(a0),d0
+		.IFNE COLDFIRE
+		move.w     26(a0),d1
+		or.l       d1,d0
+		tst.w      d0
+		.ELSE
 		or.w       26(a0),d0
+		.ENDC
 		beq.s      fe
+		.IFNE COLDFIRE
+		moveq      #0,d0
+		move.w     6(a0),d0
+		add.l      d0,d0
+		move.w     0(a2,d0.l),d0
+		.ELSE
 		move.w     6(a0),d0
 		add.w      d0,d0
 		move.w     0(a2,d0.w),d0
+		.ENDC
 		move.l     116(a0),d1
 		add.l      120(a0),d1
 		bpl.s      do_vol1
@@ -447,8 +533,13 @@ do_vol1:
 		ble.s      do_vol2
 		moveq.l    #15,d0
 do_vol2:
+		.IFNE COLDFIRE
+		move.l     d2,d1
+		addq.l     #8,d1
+		.ELSE
 		move.b     d2,d1
 		addq.b     #8,d1
+		.ENDC
 		move.b     d1,(a1)
 		move.b     d0,2(a1)
 fe:
@@ -466,8 +557,14 @@ fea1:
 		cmp.l      42(a0),d1
 		bgt.s      endfe
 fea2:
-		move.l     42(a0),d1
+		.IFNE COLDFIRE
+		move.w     36(a0),d1
+		addq.l     #1,d1
+		move.w     d1,36(a0)
+		.ELSE
 		addq.w     #1,36(a0)
+		.ENDC
+		move.l     42(a0),d1
 		bra.s      endfe
 fed:
 		cmp.b      #2,d0
@@ -482,8 +579,14 @@ fed1:
 		cmp.l      50(a0),d1
 		bgt.s      endfe
 fed2:
-		move.l     50(a0),d1
+		.IFNE COLDFIRE
+		move.w     36(a0),d1
+		addq.l     #1,d1
+		move.w     d1,36(a0)
+		.ELSE
 		addq.w     #1,36(a0)
+		.ENDC
+		move.l     50(a0),d1
 		bra.s      endfe
 fer:
 		cmp.b      #4,d0
@@ -506,7 +609,13 @@ lfa:
 		beq.s      do_fr
 		tst.w      78(a0)
 		beq.s      do_lf
+		.IFNE COLDFIRE
+		move.w     78(a0),d0
+		subq.l     #1,d0
+		move.w     d0,78(a0)
+		.ELSE
 		subq.w     #1,78(a0)
+		.ENDC
 		bra.s      do_fr
 do_lf:
 		move.l     62(a0),d1
@@ -527,13 +636,25 @@ do_lf3:
 		cmp.l      d0,d1
 		bgt.s      enddo_lf
 do_lf4:
-		move.l     d0,d1
+		.IFNE COLDFIRE
+		move.l     62(a0),d1
+		neg.l      d1
+		move.l     d1,62(a0)
+		.ELSE
 		neg.l      62(a0)
+		.ENDC
+		move.l     d0,d1
 enddo_lf:
 		move.l     d1,128(a0)
 do_fr:
 		move.w     36(a0),d0
+		.IFNE COLDFIRE
+		move.w     58(a0),d1
+		or.l       d1,d0
+		tst.w      d0
+		.ELSE
 		or.w       58(a0),d0
+		.ENDC
 		beq.s      nfe
 		move.l     128(a0),d0
 		add.l      124(a0),d0
@@ -542,9 +663,20 @@ do_fr:
 		asl.l      #4,d0
 		swap       d0
 		bpl.s      do_fr0
+		.IFNE COLDFIRE
+		addq.l     #1,d0
+		.ELSE
 		addq.w     #1,d0
+		.ENDC
 do_fr0:
+		.IFNE COLDFIRE
+		moveq      #0,d1
+		move.w     2(a0),d1
+		add.l      d1,d0
+		tst.w      d0
+		.ELSE
 		add.w      2(a0),d0
+		.ENDC
 		bpl.s      do_fr1
 		moveq.l    #0,d0
 		bra.s      do_fr2
@@ -553,13 +685,26 @@ do_fr1:
 		ble.s      do_fr2
 		move.w     #0x0FFF,d0
 do_fr2:
+		.IFNE COLDFIRE
+		move.l     d2,d1
+		add.l      d1,d1
+		.ELSE
 		move.b     d2,d1
 		add.b      d1,d1
+		.ENDC
 		move.b     d1,(a1)
 		move.b     d0,2(a1)
+		.IFNE COLDFIRE
+		addq.l     #1,d1
+		.ELSE
 		addq.b     #1,d1
+		.ENDC
 		move.b     d1,(a1)
+		.IFNE COLDFIRE
+		asr.l      #8,d0
+		.ELSE
 		asr.w      #8,d0
+		.ENDC
 		move.b     d0,2(a1)
 nfe:
 		move.w     80(a0),d0
@@ -576,8 +721,14 @@ nfea1:
 		cmp.l      86(a0),d1
 		bgt.s      endnfe
 nfea2:
-		move.l     86(a0),d1
+		.IFNE COLDFIRE
+		move.w     80(a0),d1
+		addq.l     #1,d1
+		move.w     d1,80(a0)
+		.ELSE
 		addq.w     #1,80(a0)
+		.ENDC
+		move.l     86(a0),d1
 		bra.s      endnfe
 nfed:
 		cmp.b      #2,d0
@@ -592,8 +743,14 @@ nfed1:
 		cmp.l      94(a0),d1
 		bgt.s      endnfe
 nfed2:
-		move.l     94(a0),d1
+		.IFNE COLDFIRE
+		move.w     80(a0),d1
+		addq.l     #1,d1
+		move.w     d1,80(a0)
+		.ELSE
 		addq.w     #1,80(a0)
+		.ENDC
+		move.l     94(a0),d1
 		bra.s      endnfe
 nfer:
 		cmp.b      #4,d0
@@ -616,7 +773,14 @@ lnfa:
 		beq.s      do_nfr
 		tst.w      110(a0)
 		beq.s      do_lnf
+		.IFNE COLDFIRE
+		moveq      #0,d0
+		move.w     110(a0),d0
+		subq.l     #1,d0
+		move.w     d0,110(a0)
+		.ELSE
 		subq.w     #1,110(a0)
+		.ENDC
 		bra.s      do_nfr
 do_lnf:
 		move.l     136(a0),d1
@@ -627,18 +791,37 @@ do_lnf:
 		cmp.l      d0,d1
 		bgt.s      enddo_ln
 do_lnf1:
-		move.l     d0,d1
+		.IFNE COLDFIRE
+		move.l     106(a0),d1
+		neg.l      d1
+		move.l     d1,106(a0)
+		.ELSE
 		neg.l      106(a0)
+		.ENDC
+		move.l     d0,d1
 enddo_ln:
 		move.l     d1,136(a0)
 do_nfr:
 		move.w     80(a0),d0
+		.IFNE COLDFIRE
+		move.w     102(a0),d1
+		or.l       d1,d0
+		tst.w      d0
+		.ELSE
 		or.w       102(a0),d0
+		.ENDC
 		beq.s      dec_dur
 		move.l     136(a0),d0
 		add.l      132(a0),d0
 		swap       d0
+		.IFNE COLDFIRE
+		moveq      #0,d1
+		move.w     4(a0),d1
+		add.l      d1,d0
+		tst.w      d0
+		.ELSE
 		add.w      4(a0),d0
+		.ENDC
 		bpl.s      do_nfr1
 		moveq.l    #0,d0
 		bra.s      do_nfr2
@@ -652,18 +835,35 @@ do_nfr2:
 dec_dur:
 		tst.w      112(a0)
 		bpl.s      endloop
+		.IFNE COLDFIRE
+		move.w     (a0),d0
+		subq.l     #1,d0
+		move.w     d0,(a0)
+		.ELSE
 		subq.w     #1,(a0)
+		.ENDC
 		bne.s      endloop
 		clr.w      114(a0)
 		tst.w      8(a0)
 		bne.s      dec_dur1
+		.IFNE COLDFIRE
+		move.l     d2,d1
+		addq.l     #8,d1
+		.ELSE
 		move.b     d2,d1
 		addq.w     #8,d1
+		.ENDC
 		move.b     d1,(a1)
 		move.b     #0,2(a1)
 		bra.s      endloop
 dec_dur1:
+		.IFNE COLDFIRE
+		move.w     (a0),d0
+		subq.l     #1,d0
+		move.w     d0,(a0)
+		.ELSE
 		subq.w     #1,(a0)
+		.ENDC
 		moveq.l    #4,d0
 		move.w     d0,8(a0)
 		tst.w      36(a0)
@@ -671,16 +871,32 @@ dec_dur1:
 		move.w     d0,36(a0)
 		move.w     54(a0),d1
 		move.w     124(a0),d3
+		.IFNE COLDFIRE
+		eor.l      d1,d3
+		tst.w      d3
+		.ELSE
 		eor.w      d1,d3
+		.ENDC
 		bmi.s      dec_dur2
+		.IFNE COLDFIRE
+		move.l     54(a0),d1
+		neg.l      d1
+		move.l     d1,54(a0)
+		.ELSE
 		neg.l      54(a0)
+		.ENDC
 dec_dur2:
 		tst.w      80(a0)
 		beq.s      endloop
 		move.w     d0,80(a0)
 		move.w     98(a0),d1
 		move.w     132(a0),d3
+		.IFNE COLDFIRE
+		eor.l      d1,d3
+		tst.w      d3
+		.ELSE
 		eor.w      d1,d3
+		.ENDC
 		bmi.s      endloop
 		.IFNE COLDFIRE
 		move.l     98(a0),d0
@@ -773,8 +989,8 @@ s_remove_int:
 gi_rw:
         move.l     d4,-(a7)
         move.l     d3,-(a7)
-		move.w     12(a7),d3 /* sound register */
-		move.w     14(a7),d4 /* value (-1 for reading) */
+		move.w     d0,d3     /* sound register */
+		move.w     d1,d4     /* value (-1 for reading) */
 		cmp.b      #7,d3
 		bne.s      gi_rw2
 		move.w     d3,-(a7)
@@ -782,11 +998,15 @@ gi_rw:
 		move.w     #28,-(a7) /* Giaccess (read) */
 		trap       #14
 		addq.l     #6,a7
-		move.w     16(a7),d1 /* mask */
+		move.w     12(a7),d1 /* mask */
 		and.l      d1,d0
 		or.l       d0,d4
 gi_rw2:
-        or.w       #128,d3   /* set write mask for Giaccess */
+		.IFNE COLDFIRE
+		or.l       #128,d3   /* set write mask for Giaccess */
+		.ELSE
+		or.w       #128,d3   /* set write mask for Giaccess */
+		.ENDC
 		move.w     d3,-(a7)
 		move.w     d4,-(a7)
 		move.w     #28,-(a7) /* Giaccess (write) */

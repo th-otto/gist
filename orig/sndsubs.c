@@ -32,9 +32,10 @@ struct sound {
 	/*   4 */ short noise_freq;
 	/*   6 */ short volume;
 	/*   8 */ short o8;
-	          char o10[4];
-	/*  14 */ short o14;
-	          char o16[20];
+	/*  10 */ long o10;
+	/*  14 */ long o14;
+	/*  18 */ long o18;
+	          char o22[14];
 	/*  36 */ short o36;
 	          char o38[20];
 	/*  58 */ long o58;
@@ -175,7 +176,6 @@ PP(short priority;)
 		}
 		gi_rw(voice << 1, sndptr->freq & 0xff); /* freq low */
 		gi_rw((voice << 1) + 1, sndptr->freq >> 8); /* freq high */
-		
 	} else
 	{
 		tonemask = 1 << voice; /* turns note OFF */
