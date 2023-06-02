@@ -10,112 +10,203 @@
 '
 '
 DEFWRD "a-z"
-'
-IF XBIOS(4)
-  ~FORM_ALERT(1,"[1][|Low Resolution Required ][ OK ]")
-  END
-ENDIF
+reverse_video!=TRUE
+button_width&=64
+button_height&=14
+screen_planes&=WORD{ADD(LONG{ADD(GB,4)},20)}
+@vq_color(0,w.red&,w.green&,w.blue&)
+' PRINT "white: ";w.red&;" ";w.green&;" ";w.blue&
+@vq_color(1,b.red&,b.green&,b.blue&)
+' PRINT "black: ";b.red&;" ";b.green&;" ";b.blue&
+old_conterm|=PEEK(&H484)
+SPOKE &H484,BCLR(old_conterm|,0)
 '
 IF BYTE{ADD(BASEPAGE,256)}=96
   CHDIR "\GIST\"
 ENDIF
 '
+CLR install_int%
 main
 '
 END
 '
-PROCEDURE main
-  ON ERROR GOSUB error
-  ON BREAK GOSUB break
-  '
-  install_int
-  '
-  HIDEM
-  CLS
-  DEFMOUSE 0
-  SPOKE &H484,BCLR(PEEK(&H484),0)
-  SETCOLOR 0,0
-  SETCOLOR 15,&H777
-  GRAPHMODE 2
-  '
+PROCEDURE calc_maxsounds
+  ~WIND_GET(0,4,desk.x&,desk.y&,desk.w&,desk.h&)
+  max_x&=(desk.x&+desk.w&) DIV button_width&
+  max_y&=(desk.y&+desk.h&) DIV button_height&
+  max_sounds&=max_x&*max_y&
+RETURN
+'
+PROCEDURE load_sounds
   CLR sound.count&
-  DIM sound.data$(100),sound.name$(100)
   '
+  @calc_maxsounds
+  DIM sound.data$(max_sounds&),sound.name$(max_sounds&)
   ~FSETDTA(BASEPAGE+128)
   a&=FSFIRST("SOUNDS\*.SND",-1)
   DO UNTIL a&
+    EXIT IF sound.count&>=max_sounds&
     LET sound.name$(sound.count&)=CHAR{BASEPAGE+158}
-    INC sound.count&
-    LET a&=FSNEXT()
-  LOOP
-  '
-  FOR i&=0 TO PRED(sound.count&)
-    OPEN "I",#1,"SOUNDS\"+sound.name$(i&)
+    OPEN "I",#1,"SOUNDS\"+sound.name$(sound.count&)
     IF LOF(#1)=112
-      LET sound.data$(i&)=INPUT$(112,#1)
+      LET sound.data$(sound.count&)=INPUT$(112,#1)
+      INC sound.count&
     ENDIF
     CLOSE #1
-  NEXT i&
-  '
-  DEFTEXT ,,,4
-  FOR y&=0 TO 13
-    FOR x&=0 TO 4
-      ~@draw.button(x&,y&,FALSE)
-    NEXT x&
-  NEXT y&
-  '
-  DO
-    SHOWM
-    REPEAT
-      exit!=INKEY$=CHR$(27)
-    UNTIL MOUSEK OR exit!
-    EXIT IF exit!
-    HIDEM
-    LET x&=MOUSEX\64
-    LET y&=MOUSEY\14
-    ~@snd_on(V:sound.data$(@draw.button(x&,y&,TRUE)),-1,15,-1,5)
-    SHOWM
-    REPEAT
-    UNTIL MOUSEK=0
-    HIDEM
-    ~@draw.button(x&,y&,FALSE)
+    LET a&=FSNEXT()
   LOOP
+RETURN
+'
+PROCEDURE main
+  LOCAL snd&
+  '
+  ON ERROR GOSUB error
+  ON BREAK GOSUB break
+  '
+  @load_sounds
+  IF sound.count&=0
+    ~FORM_ALERT(1,"[1][|No sounds found ][ Abort ]")
+  ELSE
+    '
+    install_int
+    '
+    HIDEM
+    GRAPHMODE 1
+    IF reverse_video!
+      @vs_color(0,0,0,0)
+      @vs_color(1,1000,1000,1000)
+    ENDIF
+    CLS
+    DEFMOUSE 0
+    '
+    DEFTEXT ,,,4
+    FOR y&=0 TO max_y&-1
+      FOR x&=0 TO max_x&-1
+        ~@draw.button(x&,y&,FALSE)
+      NEXT x&
+    NEXT y&
+    '
+    DO
+      SHOWM
+      REPEAT
+        exit!=INKEY$=CHR$(27)
+      UNTIL MOUSEK OR exit!
+      HIDEM
+      EXIT IF exit!
+      LET x&=MOUSEX\button_width&
+      LET y&=MOUSEY\button_height&
+      snd&=@draw.button(x&,y&,TRUE)
+      IF snd&<sound.count&
+        ~@snd_on(V:sound.data$(snd&),-1,15,-1,5)
+      ENDIF
+      SHOWM
+      REPEAT
+      UNTIL MOUSEK=0
+      HIDEM
+      ~@draw.button(x&,y&,FALSE)
+    LOOP
+    CLS
+    @cleanup
+    SHOWM
+  ENDIF
+RETURN
+'
+PROCEDURE cleanup
   @remove_int
-  CLS
-  SETCOLOR 0,&H777
-  SETCOLOR 15,0
+  SPOKE &H484,old_conterm|
+  IF reverse_video!
+    @vs_color(0,w.red&,w.green&,w.blue&)
+    @vs_color(1,b.red&,b.green&,b.blue&)
+  ENDIF
 RETURN
 '
 FUNCTION draw.button(x&,y&,select!)
   LOCAL s&,s$,x1&,y1&,x2&,y2&
-  LET s&=(y&*5+x&) MOD sound.count&
-  LET s$=LEFT$(sound.name$(s&),INSTR(sound.name$(s&),".")-1)
-  LET x1&=x&*64
-  LET y1&=y&*14
-  LET x2&=x1&+62
-  LET y2&=y1&+12
+  LET s&=(y&*max_x&+x&)
+  LET x1&=x&*button_width&
+  LET y1&=y&*button_height&
+  LET x2&=x1&+button_width&-2
+  LET y2&=y1&+button_height&-2
+  GRAPHMODE 1
   IF select!
-    DEFFILL 2
+    IF screen_planes&<=1
+      IF reverse_video!
+        DEFFILL 1
+      ELSE
+        DEFFILL 0
+      ENDIF
+    ELSE
+      IF screen_planes&<=2
+        DEFFILL 2
+      ELSE
+        DEFFILL 2
+      ENDIF
+    ENDIF
   ELSE
-    DEFFILL 4
+    IF screen_planes&<=1
+      IF reverse_video!
+        DEFFILL 0
+      ELSE
+        DEFFILL 1
+      ENDIF
+    ELSE
+      IF screen_planes&<=2
+        DEFFILL 3
+      ELSE
+        DEFFILL 4
+      ENDIF
+    ENDIF
   ENDIF
   PBOX x1&+2,y1&+2,x2&-2,y2&-2
-  COLOR 1
+  IF reverse_video!
+    COLOR 1
+  ELSE
+    COLOR 0
+  ENDIF
   BOX x1&,y1&,x2&,y2&
-  DEFTEXT 0
-  TEXT x1&+5,y1&+9,s$
-  DEFTEXT 1
-  TEXT x1&+4,y1&+8,s$
+  IF s&<sound.count&
+    LET s$=LEFT$(sound.name$(s&),INSTR(sound.name$(s&),".")-1)
+    GRAPHMODE 2
+    IF reverse_video!
+      DEFTEXT 0
+    ELSE
+      DEFTEXT 1
+    ENDIF
+    TEXT x1&+5,y1&+9,s$
+    IF reverse_video!
+      DEFTEXT 1
+    ELSE
+      DEFTEXT 0
+    ENDIF
+    TEXT x1&+4,y1&+8,s$
+  ENDIF
   RETURN s&
 ENDFUNC
 '
 PROCEDURE break
-  @remove_int
+  @cleanup
   END
 RETURN
 '
 PROCEDURE error
-  @remove_int
+  @cleanup
+RETURN
+'
+PROCEDURE vq_color(idx&,VAR red&,green&,blue&)
+  INTIN(0)=idx&
+  INTIN(1)=1
+  VDISYS 26,2,0,0
+  red&=INTOUT(1)
+  green&=INTOUT(2)
+  blue&=INTOUT(3)
+RETURN
+'
+PROCEDURE vs_color(idx&,red&,green&,blue&)
+  INTIN(0)=idx&
+  INTIN(1)=red&
+  INTIN(2)=green&
+  INTIN(3)=blue&
+  VDISYS 14,4,0,0
 RETURN
 '
 ' ----------------------------------------------------------------------------
@@ -148,13 +239,13 @@ PROCEDURE install_int
       LET get_prior%=buf%+868
     ELSE
       ' new version has the offsets embedded
-      buf%=buf%+28
-      LET remove_int%=buf%+WORD{buf%+2}
-      LET init_snds%=buf%+WORD{buf%+4}
-      LET snd_on%=buf%+WORD{buf%+6}
-      LET stop_snd%=buf%+WORD{buf%+8}
-      LET snd_off%=buf%+WORD{buf%+10}
-      LET get_prior%=buf%+WORD{buf%+12}
+      buf%=ADD(buf%,28)
+      LET remove_int%=buf%+WORD{ADD(buf%,2)}
+      LET init_snds%=buf%+WORD{ADD(buf%,4)}
+      LET snd_on%=buf%+WORD{ADD(buf%,6)}
+      LET stop_snd%=buf%+WORD{ADD(buf%,8)}
+      LET snd_off%=buf%+WORD{ADD(buf%,10)}
+      LET get_prior%=buf%+WORD{ADD(buf%,12)}
     ENDIF
     VOID C:install_int%()
   ENDIF
@@ -168,9 +259,10 @@ RETURN
 ' should be called after this routine.
 '
 PROCEDURE remove_int
-  IF DIM?(gistdrvr%())
+  IF install_int%<>0
     VOID C:remove_int%()
     ERASE gistdrvr%()
+    install_int%=0
   ENDIF
 RETURN
 '

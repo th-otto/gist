@@ -5,7 +5,7 @@
  * Desc: A Sound Board for all the GIST Effects for GFA 3.0+
  * Auth: Derek J. Evans 2023
  *       Ported to C by Thorsten Otto
- * Note: Max buttons (ie: effects) is 70
+ * Note: Max buttons (ie: effects) is 70 in ST-low-resolution
  *
  * ----------------------------------------------------------------------------
  */
@@ -22,21 +22,35 @@
 
 static _WORD phys_handle;
 static _WORD vdi_handle;
+static _WORD screen_planes;
 static GRECT desk;
 
 static unsigned char old_click;
 
-#define MAX_X 5
-#define MAX_Y 14
 #define BUTTON_WIDTH 64
 #define BUTTON_HEIGHT 14
-#define MAX_SOUNDS (MAX_Y * MAX_X)
 
 #define REVERSE_VIDEO 0
 
-int sound_count;
-char *sound_data[MAX_SOUNDS];
-char sound_name[MAX_SOUNDS][14];
+static int sound_count;
+static int max_x;
+static int max_y;
+static int max_sounds;
+static char **sound_data;
+#define SOUND_NAMELEN 14
+static char *sound_names;
+
+#define MSDOS_ERR(e) (-(e) - 31)
+
+
+
+static void calc_maxsounds(void)
+{
+	wind_get(0, WF_WORKXYWH, &desk.g_x, &desk.g_y, &desk.g_w, &desk.g_h);
+	max_x = (desk.g_x + desk.g_w) / BUTTON_WIDTH;
+	max_y = (desk.g_y + desk.g_h) / BUTTON_HEIGHT;
+	max_sounds = max_x * max_y;
+}
 
 
 static void init_screen(void)
@@ -53,7 +67,6 @@ static void init_screen(void)
 	vdi_handle = phys_handle;
 	v_opnvwk(workin, &vdi_handle, workout);
 	vswr_mode(vdi_handle, MD_REPLACE);
-	wind_get(0, WF_WORKXYWH, &desk.g_x, &desk.g_y, &desk.g_w, &desk.g_h);
 }
 
 
@@ -101,7 +114,15 @@ static void load_sounds(void)
 	char *buf;
 	char *p;
 	
+	calc_maxsounds();
 	sound_count = 0;
+	sound_data = (char **)malloc(max_sounds * sizeof(*sound_data) + (size_t)max_sounds * SOUND_NAMELEN);
+	if (sound_data == NULL)
+	{
+		form_error(MSDOS_ERR(-39)); /* ENOMEM */
+		return;
+	}
+	sound_names = (char *)(sound_data + max_sounds);
 	olddta = Fgetdta();
 	Fsetdta(&dta);
 	strcpy(path, "sounds\\*.snd");
@@ -110,7 +131,7 @@ static void load_sounds(void)
 	ret = Fsfirst(path, FA_RDONLY);
 	while (ret == 0)
 	{
-		if (sound_count >= MAX_SOUNDS)
+		if (sound_count >= max_sounds)
 			break;
 		strcpy(name, dta.dta_name);
 		size = dta.dta_size;
@@ -119,7 +140,7 @@ static void load_sounds(void)
 			buf = malloc(size);
 			if (buf == NULL)
 			{
-				form_error(-(-39) - 31);
+				form_error(MSDOS_ERR(-39)); /* ENOMEM */
 				break;
 			}
 			sound_data[sound_count] = buf;
@@ -131,7 +152,7 @@ static void load_sounds(void)
 				p = strchr(name, '.');
 				if (p != NULL)
 					*p = '\0';
-				strcpy(sound_name[sound_count], name);
+				strcpy(sound_names + SOUND_NAMELEN * sound_count, name);
 				sound_count++;
 			} else
 			{
@@ -187,16 +208,37 @@ static int draw_button(_WORD x, _WORD y, int select)
 	_WORD pxy[4];
 	int snd;
 	
-	snd = y * MAX_X + x;
+	snd = y * max_x + x;
 	x1 = x * BUTTON_WIDTH;
 	y1 = y * BUTTON_HEIGHT;
 	x2 = x1 + BUTTON_WIDTH - 2;
 	y2 = y1 + BUTTON_HEIGHT - 2;
 	vswr_mode(vdi_handle, MD_REPLACE);
 	if (select)
-		vsf_color(vdi_handle, G_RED);
-	else
-		vsf_color(vdi_handle, G_BLUE);
+	{
+		if (screen_planes <= 1)
+#if REVERSE_VIDEO
+			vsf_color(vdi_handle, G_BLACK);
+#else
+			vsf_color(vdi_handle, G_WHITE);
+#endif
+		else if (screen_planes <= 2)
+			vsf_color(vdi_handle, G_RED);
+		else
+			vsf_color(vdi_handle, G_RED);
+	} else
+	{
+		if (screen_planes <= 1)
+#if REVERSE_VIDEO
+			vsf_color(vdi_handle, G_WHITE);
+#else
+			vsf_color(vdi_handle, G_BLACK);
+#endif
+		else if (screen_planes <= 2)
+			vsf_color(vdi_handle, G_GREEN);
+		else
+			vsf_color(vdi_handle, G_BLUE);
+	}
 	pxy[0] = x1 + 2;
 	pxy[1] = y1 + 2;
 	pxy[2] = x2 - 2;
@@ -216,13 +258,13 @@ static int draw_button(_WORD x, _WORD y, int select)
 #else
 		vst_color(vdi_handle, G_BLACK);
 #endif
-		v_gtext(vdi_handle, x1 + 5, y1 + 9, sound_name[snd]);
+		v_gtext(vdi_handle, x1 + 5, y1 + 9, sound_names + SOUND_NAMELEN * snd);
 #if REVERSE_VIDEO
 		vst_color(vdi_handle, G_BLACK);
 #else
 		vst_color(vdi_handle, G_WHITE);
 #endif
-		v_gtext(vdi_handle, x1 + 4, y1 + 8, sound_name[snd]);
+		v_gtext(vdi_handle, x1 + 4, y1 + 8, sound_names + SOUND_NAMELEN * snd);
 		return snd;
 	}
 	return -1;
@@ -270,9 +312,9 @@ static void sndboard(void)
 	
 	cls();
 
-	for (y = 0; y < MAX_Y; y++)
+	for (y = 0; y < max_y; y++)
 	{
-		for (x = 0; x < MAX_X; x++)
+		for (x = 0; x < max_x; x++)
 			draw_button(x, y, FALSE);
 	}
 	
@@ -341,22 +383,16 @@ int main(void)
 	graf_mouse(ARROW, NULL);
 	
 #if defined(__AES__) && !defined(__PORTAES_H__) /* old Pure-C library */
-	if (_GemParBlk.global[10] < 4)
+	screen_planes = _GemParBlk.global[10]
 #else
-	if (aes_global[10] < 4)
+	screen_planes = aes_global[10];
 #endif
-	{
-		form_alert(1, "[1][|Color Resolution Required ][ OK ]");
-		exitcode = 1;
-	} else
-	{
-		/* Turn off key click; this will interfere with sound play */
-		Supexec(stop_click);
+	/* Turn off key click; this will interfere with sound play */
+	Supexec(stop_click);
 
-		sndboard();
+	sndboard();
 
-		Supexec(restore_click);
-	}
+	Supexec(restore_click);
 
 	appl_exit();
 	return exitcode;
